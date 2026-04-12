@@ -1,0 +1,179 @@
+from google import genai # <--- THIS IS THE NEW IMPORT
+from flask import Flask, request, jsonify
+from gpiozero import OutputDevice, DistanceSensor
+from rpi_hardware_pwm import HardwarePWM
+from adafruit_servokit import ServoKit
+import time
+import re
+import json
+import threading
+
+app = Flask(__name__)
+
+# ==========================================
+# 1. API & AI SETUP (UPDATED FOR NEW SDK)
+# ==========================================
+# 🛑 PASTE YOUR NEW SECURE API KEY HERE 🛑
+# We now initialize a Client instead of configuring globally
+client = genai.Client(api_key="YOUR_NEW_GEMINI_API_KEY") 
+
+# ==========================================
+# 2. HARDWARE CONFIGURATION
+# ==========================================
+SEC_PER_METER = 2.2 # Calibration for distance
+
+# Motor Drivers (Using the Jumper Trick)
+L_DIR_PIN = OutputDevice(6)   
+R_DIR_PIN = OutputDevice(19)  
+
+try:
+    pwm_l = HardwarePWM(pwm_channel=1, hz=1000, chip=0) 
+    pwm_r = HardwarePWM(pwm_channel=0, hz=1000, chip=0) 
+    pwm_l.start(0)
+    pwm_r.start(0)
+except Exception as e:
+    print(f"PWM Error: {e}")
+
+# Robotic Arm
+try:
+    kit = ServoKit(channels=16)
+    arm_connected = True
+except Exception as e:
+    print("Arm not connected.")
+    arm_connected = False
+
+# Ultrasonic Sensor
+try:
+    sensor = DistanceSensor(echo=24, trigger=23, max_distance=2.0)
+    sensor_connected = True
+except Exception as e:
+    print("Sensor not connected.")
+    sensor_connected = False
+
+# Memory System
+is_recording = False
+recording_log = []
+rec_start_time = 0
+
+# ==========================================
+# 3. CORE MOVEMENT LOGIC (With Safety)
+# ==========================================
+def drive_base(direction, meters=0, speed=70):
+    global is_recording, recording_log, rec_start_time
+    
+    if sensor_connected and direction == "forward":
+        dist_cm = sensor.distance * 100
+        if dist_cm < 25.0: 
+            print(f"EMERGENCY STOP: Wall detected at {dist_cm:.1f} cm")
+            direction = "stop"
+            speed = 0
+
+    if is_recording:
+        recording_log.append({
+            "type": "base", "dir": direction, "val": meters, 
+            "speed": speed, "time": time.time() - rec_start_time
+        })
+
+    speed_factor = max(0.1, speed / 100.0)
+    duration = (meters * SEC_PER_METER) / speed_factor if meters > 0 else 0
+    
+    if direction == "forward":
+        L_DIR_PIN.on(); R_DIR_PIN.on()
+    elif direction == "backward":
+        L_DIR_PIN.off(); R_DIR_PIN.off()
+    elif direction == "left":
+        L_DIR_PIN.off(); R_DIR_PIN.on()
+        duration = duration if duration > 0 else 0.5
+    elif direction == "right":
+        L_DIR_PIN.on(); R_DIR_PIN.off()
+        duration = duration if duration > 0 else 0.5
+    else:
+        speed = 0
+
+    pwm_l.change_duty_cycle(speed)
+    pwm_r.change_duty_cycle(speed)
+    
+    if duration > 0:
+        time.sleep(duration)
+        pwm_l.change_duty_cycle(0)
+        pwm_r.change_duty_cycle(0)
+
+def set_arm_servo(channel, angle):
+    global is_recording, recording_log, rec_start_time
+    if is_recording:
+        recording_log.append({
+            "type": "arm", "channel": channel, "angle": angle, "time": time.time() - rec_start_time
+        })
+    if arm_connected:
+        kit.servo[channel].angle = max(0, min(180, angle)) 
+
+# ==========================================
+# 4. AI & WEB ENDPOINTS
+# ==========================================
+@app.route('/')
+def index():
+    try:
+        with open("index.html", "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>Error: index.html not found!</h1>"
+
+@app.route('/api/base')
+def api_base():
+    d = request.args.get('dir', 'stop')
+    drive_base(d, 0, 70) if d != 'stop' else drive_base('stop', 0, 0)
+    return jsonify({"status": "moved", "dir": d})
+
+@app.route('/api/arm')
+def api_arm():
+    ch, ang = int(request.args.get('ch', 0)), int(request.args.get('ang', 90))
+    set_arm_servo(ch, ang)
+    return jsonify({"status": "moved", "ch": ch, "ang": ang})
+
+@app.route('/api/sensor')
+def api_sensor():
+    if sensor_connected:
+        return jsonify({"distance_cm": round(sensor.distance * 100, 1)})
+    return jsonify({"distance_cm": "Offline"})
+
+@app.route('/api/ai_chat')
+def api_ai_chat():
+    user_input = request.args.get('text', '')
+    prompt = f"""
+    You are the brain of a Robot. Tools available:
+    - Wheels: actions "drive", dirs "forward", "backward", "left", "right"
+    - Arm: actions "arm", channels 0 (Base), 1 (Shoulder), 2 (Elbow), 3 (Wrist), 4 (Gripper). Max angle 180.
+    USER REQUEST: "{user_input}"
+    Respond ONLY with a JSON list of steps. 
+    Example: [{{"action": "arm", "channel": 0, "angle": 90}}, {{"action": "drive", "dir": "forward", "seconds": 2}}]
+    """
+    
+    try:
+        # THE NEW WAY TO CALL THE API
+        response = client.models.generate_content(
+            model='gemini-2.5-flash', # We can use the newest, fastest model now!
+            contents=prompt,
+        )
+        
+        clean_json = response.text.replace('```json', '').replace('```', '').strip()
+        
+        def run_ai_logic():
+            commands = json.loads(clean_json)
+            for cmd in commands:
+                if cmd.get("action") == "drive":
+                    m_val = float(cmd.get("seconds", 1)) / SEC_PER_METER 
+                    drive_base(cmd.get("dir"), m_val, 70)
+                elif cmd.get("action") == "arm":
+                    set_arm_servo(cmd.get("channel"), cmd.get("angle"))
+                    time.sleep(0.5)
+
+        threading.Thread(target=run_ai_logic).start()
+        return jsonify({"ai_thought": clean_json})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+if __name__ == '__main__':
+    print("==================================================")
+    print(" SYSTEM ONLINE: NEXT-GEN AI + ARM + WHEELS + SENSOR")
+    print("==================================================")
+    app.run(host='0.0.0.0', port=5000, threaded=True)
