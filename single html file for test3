@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Robotic Assistant - Neural Command Interface</title>
+  <meta name="description" content="Cyberpunk-themed neural command interface for Raspberry Pi robotic assistant control.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    /* ─── Design Tokens ────────────────────────────────────────────────────── */
+    :root {
+      --bg-color:    #121418;
+      --panel-bg:    #1e2228;
+      --panel-border:#2a313a;
+      --cyan:        #00ffcc;
+      --cyan-dim:    rgba(0, 255, 204, 0.2);
+      --cyan-glow:   0 0 15px rgba(0, 255, 204, 0.4);
+      --red:         #cc2929;
+      --red-dim:     rgba(204, 41, 41, 0.2);
+      --red-glow:    0 0 15px rgba(204, 41, 41, 0.4);
+      --yellow:      #ffeb3b;
+      --yellow-dim:  rgba(255, 235, 59, 0.2);
+      --yellow-glow: 0 0 15px rgba(255, 235, 59, 0.4);
+      --text-main:   #e0e6ed;
+      --text-muted:  #667080;
+      --text-mid:    #8a96a8;
+      --font-mono:   'Share Tech Mono', monospace;
+      --font-sans:   'Inter', sans-serif;
+    }
+
+    /* ─── Reset ────────────────────────────────────────────────────────────── */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      padding: 40px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* ─── Background dot-grid ──────────────────────────────────────────────── */
+    .dot-grid {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background-image: radial-gradient(var(--text-muted) 1px, transparent 1px);
+      background-size: 20px 20px;
+      opacity: 0.1;
+      z-index: -1;
+      pointer-events: none;
+    }
+
+    /* ─── Layout ───────────────────────────────────────────────────────────── */
+    .dashboard-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 25px;
+    }
+
+    .grid-row { display: flex; gap: 25px; width: 100%; }
+
+    .panel {
+      background-color: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 4px;
+      padding: 25px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* ─── Typography ───────────────────────────────────────────────────────── */
+    h2 {
+      font-family: var(--font-sans);
+      font-size: 14px;
+      letter-spacing: 1.5px;
+      color: var(--text-main);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 25px;
+    }
+
+    .header-left  { display: flex; align-items: center; gap: 10px; }
+
+    .indicator { width: 8px; height: 8px; display: inline-block; }
+    .cyan-indicator { background-color: var(--cyan); box-shadow: var(--cyan-glow); }
+    .red-indicator  { background-color: var(--red);  box-shadow: var(--red-glow);  }
+
+    .muted-text { color: var(--text-muted); font-size: 12px; letter-spacing: 1px; }
+
+    /* ─── Neural Input Panel ───────────────────────────────────────────────── */
+    .input-panel { flex: 1; }
+
+    .input-area {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+      align-items: center;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background-color: rgba(0,0,0,0.2);
+      border: 1px solid var(--panel-border);
+      color: var(--text-main);
+      padding: 15px 20px;
+      font-family: var(--font-mono);
+      font-size: 16px;
+      border-radius: 4px;
+      outline: none;
+      transition: all 0.3s;
+    }
+    input[type="text"]:focus {
+      border-color: var(--cyan);
+      box-shadow: inset 0 0 10px var(--cyan-dim);
+    }
+
+    .icon-btn {
+      background-color: var(--cyan);
+      border: none;
+      width: 52px; height: 52px;
+      border-radius: 4px;
+      color: #000;
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .icon-btn.pulse-neon {
+      box-shadow: var(--cyan-glow);
+      animation: pulse-neon-anim 2s infinite;
+    }
+
+    .icon-btn.send-btn {
+      background-color: #7c3aed;
+      color: #fff;
+      box-shadow: 0 0 12px rgba(124, 58, 237, 0.5);
+    }
+    .icon-btn.send-btn:hover {
+      background-color: #9d5bf0;
+      box-shadow: 0 0 24px rgba(124, 58, 237, 0.8);
+    }
+
+    .icon-btn.recording {
+      background-color: var(--red);
+      box-shadow: var(--red-glow);
+      animation: pulse-red-anim 1.5s infinite;
+      color: white;
+    }
+
+    /* ─── Keyframe Animations ──────────────────────────────────────────────── */
+    @keyframes pulse-neon-anim {
+      0%   { box-shadow: 0 0 5px  rgba(0, 255, 204, 0.4); }
+      50%  { box-shadow: 0 0 20px rgba(0, 255, 204, 0.8); }
+      100% { box-shadow: 0 0 5px  rgba(0, 255, 204, 0.4); }
+    }
+
+    @keyframes pulse-red-anim {
+      0%   { box-shadow: 0 0 5px  rgba(204, 41, 41, 0.4); }
+      50%  { box-shadow: 0 0 20px rgba(204, 41, 41, 0.8); }
+      100% { box-shadow: 0 0 5px  rgba(204, 41, 41, 0.4); }
+    }
+
+    /* PROXIMITY RADAR – danger pulse on the bar fill itself */
+    @keyframes radar-danger-pulse {
+      0%   { box-shadow: 0 0 4px  rgba(204, 41, 41, 0.6), inset 0 0 6px rgba(204, 41, 41, 0.3); }
+      50%  { box-shadow: 0 0 14px rgba(204, 41, 41, 1.0), inset 0 0 12px rgba(204, 41, 41, 0.5); }
+      100% { box-shadow: 0 0 4px  rgba(204, 41, 41, 0.6), inset 0 0 6px rgba(204, 41, 41, 0.3); }
+    }
+
+    .hidden { display: none !important; }
+
+    /* ─── Thinking Indicator ───────────────────────────────────────────────── */
+    .thinking-indicator {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      color: var(--cyan);
+      font-family: var(--font-mono);
+      font-size: 14px;
+      margin-bottom: 20px;
+    }
+
+    .dot-typing {
+      position: relative;
+      width: 6px; height: 6px;
+      border-radius: 5px;
+      background-color: var(--cyan);
+      animation: dot-typing 1.5s infinite linear;
+    }
+
+    @keyframes dot-typing {
+      0%   { box-shadow: 12px 0 0 0 var(--cyan), 24px 0 0 0 var(--cyan); }
+      33%  { box-shadow: 12px 0 0 0 rgba(0,255,204,0.2), 24px 0 0 0 var(--cyan); }
+      66%  { box-shadow: 12px 0 0 0 var(--cyan), 24px 0 0 0 rgba(0,255,204,0.2); }
+      100% { box-shadow: 12px 0 0 0 var(--cyan), 24px 0 0 0 var(--cyan); }
+    }
+
+    /* ─── Status Footer ────────────────────────────────────────────────────── */
+    .status-footer {
+      display: flex;
+      flex-wrap: wrap;
+      background-color: rgba(0,0,0,0.2);
+      padding: 15px 20px;
+      margin-top: auto;
+      align-items: center;
+      border-radius: 4px;
+      gap: 0 0; /* explicit gaps handled by margin-right on children */
+    }
+
+    .status-block {
+      display: flex;
+      flex-direction: column;
+      margin-right: 30px;
+    }
+
+    .status-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+
+    .status-value {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .status-divider {
+      width: 1px;
+      height: 30px;
+      background-color: var(--panel-border);
+      margin-right: 30px;
+    }
+
+    .integrity-container {
+      margin-left: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+
+    .integrity-bar  { display: flex; gap: 2px; margin-top: 8px; }
+    .integrity-dots {
+      width: 120px; height: 4px;
+      background: repeating-linear-gradient(to right, var(--cyan) 0, var(--cyan) 3px, transparent 3px, transparent 5px);
+    }
+
+    /* ─── PROXIMITY RADAR block ────────────────────────────────────────────── */
+    .proximity-block {
+      display: flex;
+      flex-direction: column;
+      margin-right: 30px;
+      min-width: 180px;
+    }
+
+    .proximity-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+
+    .proximity-value {
+      font-family: var(--font-mono);
+      font-size: 15px;
+      font-weight: bold;
+      color: var(--cyan);         /* default; overridden by JS */
+      transition: color 0.3s;
+    }
+
+    /* Track (background) */
+    .proximity-track {
+      width: 100%;
+      height: 6px;
+      background-color: rgba(255,255,255,0.06);
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Fill (the moving bar) */
+    .proximity-fill {
+      height: 100%;
+      width: 0%;                  /* set by JS */
+      border-radius: 3px;
+      background-color: var(--cyan);  /* default; overridden by JS */
+      transition: width 0.35s ease, background-color 0.35s ease, box-shadow 0.35s ease;
+    }
+
+    /* When in danger zone, JS adds this class to trigger the pulse */
+    .proximity-fill.danger-pulse {
+      animation: radar-danger-pulse 0.8s ease-in-out infinite;
+    }
+
+    /* ─── Terminal Panel ────────────────────────────────────────────────────── */
+    .terminal-panel { flex: 1; }
+
+    .window-controls { display: flex; gap: 5px; }
+    .window-controls span {
+      width: 8px; height: 8px;
+      border-radius: 0;
+      display: inline-block;
+    }
+    .red-dot  { background-color: var(--red);  }
+    .cyan-dot { background-color: var(--cyan); }
+
+    .terminal-content {
+      background-color: rgba(0,0,0,0.3);
+      border-left: 2px solid var(--cyan);
+      padding: 20px;
+      flex: 1;
+      overflow-y: auto;
+      max-height: 250px;
+    }
+
+    pre {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      color: var(--cyan);
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    /* JSON syntax highlight tokens */
+    .json-string  { color: #a3e6a3; }
+    .json-key     { color: var(--cyan); }
+    .json-number  { color: #ffeb3b; }
+    .json-boolean { color: #ff9d4d; }
+
+    /* Thought Terminal — multi-role blocks */
+    .terminal-block {
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .terminal-prefix {
+      display: block;
+      font-size: 11px;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+      opacity: 0.7;
+    }
+
+    .terminal-user pre, .terminal-user { color: #ffc94d; }
+    .terminal-user .terminal-prefix    { color: #ffa020; }
+
+    .terminal-ai pre, .terminal-ai     { color: var(--cyan); }
+    .terminal-ai .terminal-prefix      { color: #00ccaa; }
+
+    .terminal-system pre, .terminal-system { color: #6ea4c8; }
+    .terminal-system .terminal-prefix      { color: #4a7a9b; }
+
+    .terminal-error pre, .terminal-error   { color: #ff5577; }
+    .terminal-error .terminal-prefix       { color: #cc0033; }
+
+    /* ─── Middle Row ────────────────────────────────────────────────────────── */
+    .movement-panel { flex: 5; align-items: center; }
+
+    .panel-identifier {
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      font-size: 12px;
+      letter-spacing: 1px;
+      margin-bottom: 30px;
+    }
+
+    .d-pad-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 30px;
+    }
+
+    .d-pad {
+      display: grid;
+      grid-template-areas:
+        ". up ."
+        "left center right"
+        ". down .";
+      gap: 10px;
+    }
+
+    .d-pad-btn {
+      background-color: rgba(255,255,255,0.05);
+      border: 1px solid var(--panel-border);
+      color: var(--text-mid);
+      width: 60px; height: 60px;
+      font-size: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .d-pad-btn:hover, .d-pad-btn:active {
+      background-color: rgba(255,255,255,0.1);
+      color: white;
+    }
+    .d-pad-btn.center { border: 2px solid var(--cyan); color: var(--cyan); grid-area: center; }
+
+    .up    { grid-area: up; }
+    .left  { grid-area: left; }
+    .right { grid-area: right; }
+    .down  { grid-area: down; }
+
+    .axes-display { display: flex; gap: 40px; margin-top: auto; }
+
+    .axis { display: flex; flex-direction: column; align-items: center; }
+    .axis-label  { font-size: 10px; color: var(--text-muted); margin-bottom: 5px; letter-spacing: 1px; }
+    .axis-value  { font-family: var(--font-mono); font-size: 20px; }
+
+    /* ─── Telemetry ─────────────────────────────────────────────────────────── */
+    .telemetry-panel { flex: 7; }
+
+    .hydraulics-status {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--cyan);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      letter-spacing: 1px;
+    }
+
+    .sliders-container { display: flex; flex-direction: column; gap: 20px; }
+    .slider-group      { display: flex; flex-direction: column; gap: 15px; }
+
+    .slider-group label { font-size: 11px; color: var(--text-mid); letter-spacing: 1px; }
+
+    .slider-track-container { position: relative; display: flex; align-items: center; }
+
+    .cyber-slider {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      background: var(--panel-border);
+      outline: none;
+      border-radius: 2px;
+    }
+    .cyber-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--cyan);
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(0,255,204,0.5);
+      position: relative;
+      z-index: 2;
+    }
+
+    .slider-value {
+      position: absolute;
+      top: -25px;
+      left: 0;
+      background: var(--cyan);
+      color: #000;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 2px;
+      font-weight: bold;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+
+    /* ─── Bottom Actions ────────────────────────────────────────────────────── */
+    .bottom-panel { display: flex; flex-direction: row; justify-content: space-between; align-items: center; }
+
+    .teaching-mode-info h2 { font-size: 18px; margin-bottom: 5px; }
+    .teaching-mode-info p  { color: var(--text-muted); font-size: 13px; }
+
+    .actions-container { display: flex; gap: 15px; align-items: center; }
+
+    .action-btn {
+      padding: 15px 25px;
+      border: none;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: all 0.2s;
+    }
+
+    .sq-indicator { width: 10px; height: 10px; background-color: white;     display: inline-block; }
+    .sq-outline   { width: 10px; height: 10px; border: 2px solid white; display: inline-block; background: transparent; }
+
+    .red-btn  { background-color: var(--red); color: white; }
+    .red-btn:hover { box-shadow: var(--red-glow); }
+
+    .dark-btn { background-color: rgba(255,255,255,0.05); border: 1px solid var(--panel-border); color: white; }
+    .dark-btn:hover { background-color: rgba(255,255,255,0.1); }
+
+    .cyan-btn { background-color: var(--cyan); color: #000; box-shadow: var(--cyan-glow); }
+    .cyan-btn:hover { box-shadow: 0 0 25px rgba(0, 255, 204, 0.8); }
+
+    .emergency-btn {
+      background-color: #ff003c;
+      color: white;
+      box-shadow: 0 0 20px rgba(255, 0, 60, 0.6);
+      border: 2px solid #ff003c;
+      margin-left: 20px;
+    }
+    .emergency-btn:hover  { background-color: #ff3366; box-shadow: 0 0 30px rgba(255, 0, 60, 0.9); }
+    .emergency-btn:active { transform: scale(0.95); }
+
+    /* ─── Footer bar ────────────────────────────────────────────────────────── */
+    .footer-bar {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      border-top: 1px solid var(--panel-border);
+      padding-top: 15px;
+      margin-top: 10px;
+    }
+    .footer-links { display: flex; gap: 20px; }
+  </style>
+</head>
+<body>
+  <div class="dot-grid"></div>
+  <div class="dashboard-container">
+
+    <!-- Top Row -->
+    <div class="grid-row top-row">
+
+      <!-- Input Panel -->
+      <div class="panel input-panel">
+        <div class="panel-header">
+          <div class="header-left">
+            <span class="indicator cyan-indicator"></span>
+            <h2>NEURAL_INPUT_CHANNEL</h2>
+          </div>
+          <div class="header-right">
+            <span class="muted-text">FREQ: 5.8GHZ</span>
+          </div>
+        </div>
+
+        <div class="input-area">
+          <input type="text" id="command-input" placeholder="ENTER COMMAND SEQUENCE..." autocomplete="off" spellcheck="false">
+          <button id="send-btn" class="icon-btn send-btn" title="Send command (Enter)">
+            <i class="fa-solid fa-paper-plane"></i>
+          </button>
+          <button id="mic-btn" class="icon-btn pulse-neon" title="Hold to speak">
+            <i class="fa-solid fa-microphone"></i>
+          </button>
+        </div>
+
+        <div id="thinking-indicator" class="thinking-indicator hidden">
+          <div class="dot-typing"></div>
+          <span>PROCESSING NEURAL INPUT...</span>
+        </div>
+
+        <!-- ── Status Footer with new PROXIMITY RADAR block ────────────── -->
+        <div class="status-footer">
+          <!-- UPTIME -->
+          <div class="status-block">
+            <span class="status-label">UPTIME</span>
+            <span class="status-value" id="uptime">00:00:00</span>
+          </div>
+
+          <div class="status-divider"></div>
+
+          <!-- LATENCY -->
+          <div class="status-block">
+            <span class="status-label">LATENCY</span>
+            <span class="status-value" id="latency">0.00MS</span>
+          </div>
+
+          <div class="status-divider"></div>
+
+          <!-- PROXIMITY RADAR (new) -->
+          <div class="proximity-block">
+            <div class="proximity-header">
+              <span class="status-label">PROXIMITY RADAR</span>
+              <span class="proximity-value" id="proximity-value">-- cm</span>
+            </div>
+            <div class="proximity-track" title="Ultrasonic sensor — max range 200 cm">
+              <div class="proximity-fill" id="proximity-fill"></div>
+            </div>
+          </div>
+
+          <!-- SYSTEM INTEGRITY (pushed to right) -->
+          <div class="integrity-container">
+            <span class="status-label">SYSTEM INTEGRITY</span>
+            <div class="integrity-bar">
+              <div class="integrity-dots"></div>
+            </div>
+          </div>
+        </div>
+        <!-- ───────────────────────────────────────────────────────────── -->
+      </div>
+
+      <!-- JSON Output Panel -->
+      <div class="panel terminal-panel">
+        <div class="panel-header">
+          <h2>THOUGHT_TERMINAL.JSON</h2>
+          <div class="window-controls">
+            <span class="red-dot"></span>
+            <span class="cyan-dot"></span>
+          </div>
+        </div>
+        <div class="terminal-content">
+          <pre id="json-output"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Middle Row -->
+    <div class="grid-row middle-row">
+
+      <!-- D-Pad Panel -->
+      <div class="panel movement-panel">
+        <div class="panel-identifier">WHEEL MOVEMENT CONTROL</div>
+        <div class="d-pad-container">
+          <div class="d-pad">
+            <button class="d-pad-btn up"    id="move-up">   <i class="fa-solid fa-chevron-up"></i>               </button>
+            <button class="d-pad-btn left"  id="move-left"> <i class="fa-solid fa-chevron-left"></i>             </button>
+            <button class="d-pad-btn center pulse-cyan" id="move-stop">
+              <i class="fa-solid fa-arrows-up-down-left-right"></i>
+            </button>
+            <button class="d-pad-btn right" id="move-right"><i class="fa-solid fa-chevron-right"></i>            </button>
+            <button class="d-pad-btn down"  id="move-down"> <i class="fa-solid fa-chevron-down"></i>             </button>
+          </div>
+        </div>
+        <div class="axes-display">
+          <div class="axis">
+            <span class="axis-label">X-AXIS</span>
+            <span class="axis-value" id="x-axis-val">000.0</span>
+          </div>
+          <div class="axis">
+            <span class="axis-label">Y-AXIS</span>
+            <span class="axis-value" id="y-axis-val">000.0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sliders Panel -->
+      <div class="panel telemetry-panel">
+        <div class="panel-header telemetry-header">
+          <h2>ARM_JOINT_TELEMETRY</h2>
+          <div class="hydraulics-status">
+            <span class="indicator cyan-indicator"></span> HYDRAULICS_NOMINAL
+          </div>
+        </div>
+
+        <div class="sliders-container">
+          <div class="slider-group">
+            <label>BASE</label>
+            <div class="slider-track-container">
+              <input type="range" class="cyber-slider" id="base-slider"     min="0"   max="180" value="90">
+              <span class="slider-value" id="base-val">90&deg;</span>
+            </div>
+          </div>
+          <div class="slider-group">
+            <label>SHOULDER</label>
+            <div class="slider-track-container">
+              <input type="range" class="cyber-slider" id="shoulder-slider" min="-90" max="90"  value="45">
+              <span class="slider-value" id="shoulder-val">45&deg;</span>
+            </div>
+          </div>
+          <div class="slider-group">
+            <label>ELBOW</label>
+            <div class="slider-track-container">
+              <input type="range" class="cyber-slider" id="elbow-slider"    min="-90" max="90"  value="-71">
+              <span class="slider-value" id="elbow-val">-71&deg;</span>
+            </div>
+          </div>
+          <div class="slider-group">
+            <label>WRIST</label>
+            <div class="slider-track-container">
+              <input type="range" class="cyber-slider" id="wrist-slider"    min="0"   max="360" value="253">
+              <span class="slider-value" id="wrist-val">253&deg;</span>
+            </div>
+          </div>
+          <div class="slider-group">
+            <label>GRIPPER</label>
+            <div class="slider-track-container">
+              <input type="range" class="cyber-slider" id="gripper-slider"  min="0"   max="100" value="100">
+              <span class="slider-value" id="gripper-val">100%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Row -->
+    <div class="panel bottom-panel">
+      <div class="teaching-mode-info">
+        <h2>TEACHING_MODE_V3</h2>
+        <p>Manual sequence recording and synaptic memory execution.</p>
+      </div>
+      <div class="actions-container">
+        <button class="action-btn red-btn"       id="record-btn">
+          <span class="sq-indicator"></span> RECORD_ROUTINE
+        </button>
+        <button class="action-btn dark-btn"      id="stop-btn">
+          <span class="sq-outline"></span> STOP
+        </button>
+        <button class="action-btn cyan-btn"      id="execute-btn">
+          <i class="fa-solid fa-play"></i> EXECUTE_MEMORY
+        </button>
+        <button class="action-btn emergency-btn" id="emergency-stop-btn">
+          <i class="fa-solid fa-triangle-exclamation"></i> EMERGENCY STOP
+        </button>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <span>SYNAPTIC COMMAND INTERFACE // NO_SIGNAL_LOST</span>
+      <div class="footer-links">
+        <span>RECORD_ROUTINE</span>
+        <span>SAVE_SEQUENCE</span>
+        <span>DUMP_LOGS</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ═══════════════════════════════════════════════════════════════════════
+       GLOBAL STATE
+    ═══════════════════════════════════════════════════════════════════════ */
+    let uptimeSeconds = 0;
+    let isRecording   = false;
+    let isThinking    = false;
+    let recognition   = null;
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       DOM ELEMENTS
+    ═══════════════════════════════════════════════════════════════════════ */
+    const elements = {
+      commandInput:      document.getElementById('command-input'),
+      sendBtn:           document.getElementById('send-btn'),
+      micBtn:            document.getElementById('mic-btn'),
+      thinkingIndicator: document.getElementById('thinking-indicator'),
+      jsonOutput:        document.getElementById('json-output'),
+      uptime:            document.getElementById('uptime'),
+      latency:           document.getElementById('latency'),
+      xAxisVal:          document.getElementById('x-axis-val'),
+      yAxisVal:          document.getElementById('y-axis-val'),
+      emergencyBtn:      document.getElementById('emergency-stop-btn'),
+      /* Proximity Radar */
+      proximityValue:    document.getElementById('proximity-value'),
+      proximityFill:     document.getElementById('proximity-fill'),
+    };
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       SLIDER ELEMENTS
+    ═══════════════════════════════════════════════════════════════════════ */
+    const sliders = [
+      { id: 'base',     el: document.getElementById('base-slider'),     valEl: document.getElementById('base-val'),     suffix: '°' },
+      { id: 'shoulder', el: document.getElementById('shoulder-slider'), valEl: document.getElementById('shoulder-val'), suffix: '°' },
+      { id: 'elbow',    el: document.getElementById('elbow-slider'),    valEl: document.getElementById('elbow-val'),    suffix: '°' },
+      { id: 'wrist',    el: document.getElementById('wrist-slider'),    valEl: document.getElementById('wrist-val'),    suffix: '°' },
+      { id: 'gripper',  el: document.getElementById('gripper-slider'),  valEl: document.getElementById('gripper-val'),  suffix: '%' },
+    ];
+
+    const sliderMap = {};
+    sliders.forEach(s => { sliderMap[s.id] = s; });
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       INIT
+    ═══════════════════════════════════════════════════════════════════════ */
+    function init() {
+      startUptime();
+      setupSliders();
+      setupSpeechRecognition();
+      setupEventListeners();
+      updateLatencySimulator();
+      startProximityPolling();          // ← new
+      printToTerminal('system', {
+        status: 'awaiting_input',
+        cognition: { intent: 'idle', target: 'none', confidence: 0.000 }
+      });
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       UPTIME COUNTER
+    ═══════════════════════════════════════════════════════════════════════ */
+    function startUptime() {
+      setInterval(() => {
+        uptimeSeconds++;
+        const hrs  = Math.floor(uptimeSeconds / 3600).toString().padStart(2, '0');
+        const mins = Math.floor((uptimeSeconds % 3600) / 60).toString().padStart(2, '0');
+        const secs = (uptimeSeconds % 60).toString().padStart(2, '0');
+        elements.uptime.textContent = `${hrs}:${mins}:${secs}`;
+      }, 1000);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       SIMULATED LATENCY
+    ═══════════════════════════════════════════════════════════════════════ */
+    function updateLatencySimulator() {
+      setInterval(() => {
+        const base   = 0.40;
+        const jitter = Math.random() * 0.1 - 0.05;
+        elements.latency.textContent = (base + jitter).toFixed(2) + 'MS';
+      }, 2000);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       SLIDERS
+    ═══════════════════════════════════════════════════════════════════════ */
+    function setupSliders() {
+      sliders.forEach(slider => {
+        const updateSliderUI = () => {
+          const val     = slider.el.value;
+          const min     = parseFloat(slider.el.min) || 0;
+          const max     = parseFloat(slider.el.max) || 100;
+          const percent = ((val - min) / (max - min)) * 100;
+          slider.valEl.textContent = val + slider.suffix;
+          slider.valEl.style.left  = `calc(${percent}% + (${8 - (percent / 100) * 16}px))`;
+        };
+        slider.el.addEventListener('input', updateSliderUI);
+        setTimeout(updateSliderUI, 100);
+      });
+
+      window.addEventListener('resize', () => {
+        sliders.forEach(s => s.el.dispatchEvent(new Event('input')));
+      });
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       TERMINAL OUTPUT
+    ═══════════════════════════════════════════════════════════════════════ */
+    function printToTerminal(role, content) {
+      const pre = elements.jsonOutput;
+      const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+
+      let prefix   = '';
+      let cssClass = '';
+
+      switch (role) {
+        case 'user':   prefix = `[${now}] ► USER`;        cssClass = 'terminal-user';   break;
+        case 'ai':     prefix = `[${now}] ◆ AI_RESPONSE`; cssClass = 'terminal-ai';     break;
+        case 'error':  prefix = `[${now}] ✖ ERROR`;       cssClass = 'terminal-error';  break;
+        default:       prefix = `[${now}] ● SYSTEM`;      cssClass = 'terminal-system';
+      }
+
+      const body      = (typeof content === 'string') ? content : JSON.stringify(content, null, 2);
+      const escaped   = body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const highlighted = syntaxHighlightJSON(escaped);
+
+      const block = document.createElement('div');
+      block.className = `terminal-block ${cssClass}`;
+      block.innerHTML = `<span class="terminal-prefix">${prefix}</span>\n${highlighted}`;
+
+      if (pre.dataset.initialized !== 'true') {
+        pre.innerHTML = '';
+        pre.dataset.initialized = 'true';
+      }
+
+      pre.appendChild(block);
+      pre.parentElement.scrollTop = pre.parentElement.scrollHeight;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       JSON SYNTAX HIGHLIGHT
+    ═══════════════════════════════════════════════════════════════════════ */
+    function syntaxHighlightJSON(raw) {
+      return raw.replace(
+        /(&#34;(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\&#])*&#34;(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+        function (match) {
+          const unescaped = match.replace(/&#34;/g, '"');
+          let cls = 'json-number';
+          if (/^"/.test(unescaped)) {
+            cls = /:$/.test(unescaped) ? 'json-key' : 'json-string';
+          } else if (/true|false|null/.test(unescaped)) {
+            cls = 'json-boolean';
+          }
+          return `<span class="${cls}">${match}</span>`;
+        }
+      );
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       PROXIMITY RADAR — polling /api/sensor every 500 ms
+    ═══════════════════════════════════════════════════════════════════════ */
+    const PROXIMITY_MAX_CM = 200;   // full-bar range
+    const THRESHOLD_SAFE   = 50;    // > 50 cm  → SAFE   (cyan)
+    const THRESHOLD_WARN   = 25;    // 25–50 cm → WARN   (yellow)
+                                    // < 25 cm  → DANGER (red + pulse)
+    const COLOR_SAFE   = '#00ffcc'; // var(--cyan)
+    const COLOR_WARN   = '#ffeb3b'; // var(--yellow)
+    const COLOR_DANGER = '#cc2929'; // var(--red)
+
+    function updateProximityUI(distanceCm) {
+      const fill  = elements.proximityFill;
+      const value = elements.proximityValue;
+
+      /* ── Offline state ─────────────────────────────────────────────── */
+      if (distanceCm === 'Offline' || distanceCm === null || distanceCm === undefined) {
+        value.textContent = 'OFFLINE';
+        value.style.color = '#667080';          /* muted grey */
+        fill.style.width  = '0%';
+        fill.style.backgroundColor = '#667080';
+        fill.classList.remove('danger-pulse');
+        return;
+      }
+
+      const dist = parseFloat(distanceCm);
+
+      /* ── Width as % of 200 cm range ────────────────────────────────── */
+      const pct = Math.min(Math.max((dist / PROXIMITY_MAX_CM) * 100, 0), 100);
+      fill.style.width = pct + '%';
+
+      /* ── Colour logic ──────────────────────────────────────────────── */
+      let color;
+      if (dist > THRESHOLD_SAFE) {
+        color = COLOR_SAFE;
+        fill.classList.remove('danger-pulse');
+      } else if (dist >= THRESHOLD_WARN) {
+        color = COLOR_WARN;
+        fill.classList.remove('danger-pulse');
+      } else {
+        color = COLOR_DANGER;
+        fill.classList.add('danger-pulse');     /* pulsing animation */
+      }
+
+      fill.style.backgroundColor = color;
+      value.style.color = color;
+      value.textContent = dist.toFixed(1) + ' cm';
+    }
+
+    async function fetchProximitySensor() {
+      try {
+        const resp = await fetch('/api/sensor');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        updateProximityUI(data.distance_cm);
+      } catch (_) {
+        /* If the endpoint is unreachable, show Offline rather than crashing */
+        updateProximityUI('Offline');
+      }
+    }
+
+    function startProximityPolling() {
+      /* Fetch immediately on load, then every 500 ms */
+      fetchProximitySensor();
+      setInterval(fetchProximitySensor, 500);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       SPEECH RECOGNITION
+    ═══════════════════════════════════════════════════════════════════════ */
+    function setupSpeechRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      if (!SpeechRecognition) {
+        elements.micBtn.title    = 'Speech API not supported in this browser';
+        elements.micBtn.disabled = true;
+        printToTerminal('system', 'Web Speech API not supported. Use Chrome/Edge.');
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.continuous     = false;
+      recognition.interimResults = true;
+      recognition.lang           = 'en-US';
+
+      recognition.onstart = function () {
+        isRecording = true;
+        elements.micBtn.classList.add('recording');
+        elements.micBtn.classList.remove('pulse-neon');
+        elements.commandInput.placeholder = '🎙  LISTENING...';
+        elements.commandInput.value = '';
+      };
+
+      recognition.onresult = function (event) {
+        let interim = '';
+        let final   = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            final += event.results[i][0].transcript;
+          } else {
+            interim += event.results[i][0].transcript;
+          }
+        }
+        elements.commandInput.value = final || interim;
+      };
+
+      recognition.onerror = function (event) {
+        stopRecordingUI();
+        let msg = `Speech recognition error: ${event.error}`;
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          msg = 'Mic blocked: Ensure you are using HTTPS or have enabled insecure origins ' +
+                'in Chrome flags (chrome://flags/#unsafely-treat-insecure-origin-as-secure).';
+        } else if (event.error === 'network') {
+          msg = 'Speech recognition failed: network error. Check your internet connection.';
+        } else if (event.error === 'no-speech') {
+          msg = 'No speech detected. Please speak after pressing the mic button.';
+        } else if (event.error === 'audio-capture') {
+          msg = 'Mic capture failed: No microphone detected or access denied by device.';
+        }
+        printToTerminal('error', msg);
+      };
+
+      recognition.onend = function () {
+        stopRecordingUI();
+        const query = elements.commandInput.value.trim();
+        if (query) processCommand(query);
+      };
+    }
+
+    function startRecording() {
+      if (recognition && !isRecording && !isThinking) {
+        try { recognition.start(); }
+        catch (e) { printToTerminal('error', `Could not start microphone: ${e.message}`); }
+      }
+    }
+
+    function stopRecordingUI() {
+      isRecording = false;
+      elements.micBtn.classList.remove('recording');
+      elements.micBtn.classList.add('pulse-neon');
+      elements.commandInput.placeholder = 'ENTER COMMAND SEQUENCE...';
+    }
+
+    function stopRecording() {
+      stopRecordingUI();
+      if (recognition) {
+        try { recognition.stop(); } catch (_) { /* ignore */ }
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       AI COMMAND PROCESSING
+    ═══════════════════════════════════════════════════════════════════════ */
+    async function processCommand(query) {
+      if (isThinking) return;
+
+      isThinking = true;
+      elements.thinkingIndicator.classList.remove('hidden');
+      elements.commandInput.value = '';
+      printToTerminal('user', query);
+
+      const startTime = Date.now();
+
+      try {
+        const response = await fetch(`/api/ai_chat?text=${encodeURIComponent(query)}`);
+        if (!response.ok) throw new Error(`Server returned HTTP ${response.status} ${response.statusText}`);
+
+        const data = await response.json();
+        printToTerminal('ai', data);
+        applyTelemetryFromResponse(data);
+
+        const elapsed = Date.now() - startTime;
+        elements.latency.textContent = elapsed.toFixed(0) + 'MS';
+
+      } catch (error) {
+        printToTerminal('error', `API unreachable: ${error.message} — using mock response.`);
+
+        const mockResponse = {
+          cognition: {
+            status: 'processing',
+            intent: 'object_relocation',
+            target: 'unit_alpha_09',
+            vectors: [0.45, -0.12, 0.88],
+            confidence: 0.992
+          },
+          locomotion: {
+            base: 'locked',
+            arm_joints: { shoulder: 12.5, elbow: -44.2, wrist: 180.0 }
+          }
+        };
+
+        printToTerminal('ai', mockResponse);
+        applyTelemetryFromResponse(mockResponse);
+
+      } finally {
+        isThinking = false;
+        elements.thinkingIndicator.classList.add('hidden');
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       APPLY TELEMETRY FROM API RESPONSE
+    ═══════════════════════════════════════════════════════════════════════ */
+    function applyTelemetryFromResponse(data) {
+      if (data && data.locomotion && data.locomotion.arm_joints) {
+        const joints = data.locomotion.arm_joints;
+        if (joints.shoulder !== undefined && sliderMap.shoulder) sliderMap.shoulder.el.value = joints.shoulder;
+        if (joints.elbow    !== undefined && sliderMap.elbow)    sliderMap.elbow.el.value    = joints.elbow;
+        if (joints.wrist    !== undefined && sliderMap.wrist)    sliderMap.wrist.el.value    = joints.wrist;
+        sliders.forEach(s => s.el.dispatchEvent(new Event('input')));
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       EMERGENCY STOP
+    ═══════════════════════════════════════════════════════════════════════ */
+    async function triggerEmergencyStop() {
+      printToTerminal('error', {
+        status: 'CRITICAL_OVERRIDE',
+        intent: 'EMERGENCY_STOP_INVOKED',
+        hardware_state: 'pwm.stop()',
+        ai_override: true
+      });
+
+      const container = document.querySelector('.dashboard-container');
+      container.style.boxShadow = 'inset 0 0 120px rgba(255, 0, 60, 0.6)';
+      setTimeout(() => { container.style.boxShadow = ''; }, 600);
+
+      try { await fetch('/api/base?dir=stop'); }
+      catch (e) { printToTerminal('error', `Emergency stop fetch failed: ${e.message}`); }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       D-PAD
+    ═══════════════════════════════════════════════════════════════════════ */
+    function updateDpadAxes(dir) {
+      const step = 20.5;
+      let x = parseFloat(elements.xAxisVal.textContent) || 0;
+      let y = parseFloat(elements.yAxisVal.textContent) || 0;
+
+      if (dir === 'up')    y += step;
+      if (dir === 'down')  y -= step;
+      if (dir === 'right') x += step;
+      if (dir === 'left')  x -= step;
+
+      elements.xAxisVal.textContent = x.toFixed(1);
+      elements.yAxisVal.textContent = y.toFixed(1);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       EVENT LISTENERS
+    ═══════════════════════════════════════════════════════════════════════ */
+    function setupEventListeners() {
+      elements.micBtn.addEventListener('mousedown',  startRecording);
+      elements.micBtn.addEventListener('mouseup',    stopRecording);
+      elements.micBtn.addEventListener('mouseleave', stopRecording);
+      elements.micBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+      elements.micBtn.addEventListener('touchend',   (e) => { e.preventDefault(); stopRecording(); });
+
+      elements.sendBtn.addEventListener('click', () => {
+        const query = elements.commandInput.value.trim();
+        if (query && !isThinking) processCommand(query);
+      });
+
+      elements.commandInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const query = elements.commandInput.value.trim();
+          if (query && !isThinking) processCommand(query);
+        }
+      });
+
+      elements.emergencyBtn.addEventListener('click', triggerEmergencyStop);
+
+      ['up', 'down', 'left', 'right', 'stop'].forEach(dir => {
+        const btn = document.getElementById(`move-${dir}`);
+        if (btn) {
+          btn.addEventListener('mousedown',  () => updateDpadAxes(dir));
+          btn.addEventListener('mouseup',    () => updateDpadAxes('stop'));
+          btn.addEventListener('mouseleave', () => updateDpadAxes('stop'));
+          btn.addEventListener('touchstart', (e) => { e.preventDefault(); updateDpadAxes(dir); });
+          btn.addEventListener('touchend',   (e) => { e.preventDefault(); updateDpadAxes('stop'); });
+        }
+      });
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       KICKOFF
+    ═══════════════════════════════════════════════════════════════════════ */
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
