@@ -13,7 +13,7 @@ app = Flask(__name__)
 # 1. API & AI SETUP
 # ==========================================
 # 🛑 PASTE YOUR NEW SECURE API KEY HERE 🛑
-client = genai.Client(api_key="YOUR_GEMINI_API_KEY") 
+client = genai.Client(api_key="AIzaSyAYDH-KdCWr6_khyjzqKjB9VUUX_BM-Awk") 
 
 # ==========================================
 # 2. HARDWARE CONFIGURATION
